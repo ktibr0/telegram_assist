@@ -1,7 +1,7 @@
 # Telegram Bot Proxy
 
 A Telegram bot that acts as a proxy between users and admin, allowing the admin to receive and respond to messages without sharing their direct contact information.
-
+Русская версия readme.md https://github.com/ktibr0/telegram_assist/blob/main/readme-ru.md
 ## 📑 Features
 
 - Forwards all user messages to the admin
