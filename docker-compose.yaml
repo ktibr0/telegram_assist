@@ -6,25 +6,3 @@ services:
     restart: always
     env_file:
       - .env
-    depends_on:
-      - mongodb
-    networks:
-      - bot-network
-
-  mongodb:
-    image: mongo:latest
-    restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
-    volumes:
-      - mongo-data:/data/db
-    networks:
-      - bot-network
-
-networks:
-  bot-network:
-    driver: bridge
-
-volumes:
-  mongo-data:

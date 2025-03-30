@@ -37,6 +37,18 @@ async def start(update: Update, context: CallbackContext) -> None:
         f"Просто напишите ваше сообщение, и я его перешлю.",
         reply_markup=ForceReply(selective=True),
     )
+    
+    # Логирование запуска бота пользователем
+    logger.info(f"Пользователь {user.id} (@{user.username}) запустил бота")
+    
+    # Уведомление администратора о новом пользователе, если это не сам администратор
+    if user.id != ADMIN_USER_ID:
+        await context.bot.send_message(
+            chat_id=ADMIN_USER_ID,
+            text=f"📢 Новый пользователь запустил бота:\n"
+                 f"👤 {user.first_name} {user.last_name or ''} (@{user.username or 'без username'})\n"
+                 f"🆔 ID: {user.id}"
+        )
 
 
 # Обработка сообщений
@@ -44,8 +56,12 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
     message = update.message
     
+    # Логирование полученного сообщения
+    logger.info(f"Получено сообщение от пользователя {user.id} (@{user.username})")
+    
     # Проверка, заблокирован ли пользователь
     if blocked_users_collection.find_one({"user_id": user.id}):
+        logger.info(f"Сообщение от заблокированного пользователя {user.id} проигнорировано")
         return
     
     # Сохранение сообщения в базе данных
@@ -77,58 +93,113 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     elif message.voice:
         file_id = message.voice.file_id
         file_type = 'voice'
+    elif message.audio:
+        file_id = message.audio.file_id
+        file_type = 'audio'
+    elif message.sticker:
+        file_id = message.sticker.file_id
+        file_type = 'sticker'
     
     message_data["file_id"] = file_id
     message_data["file_type"] = file_type
     
+    # Вставка сообщения в базу данных
     messages_collection.insert_one(message_data)
+    logger.info(f"Сообщение от пользователя {user.id} сохранено в базе данных")
     
-    # Отправка сообщения администратору
+    # Формирование информации о пользователе
     user_info = f"👤 Пользователь: {user.first_name} {user.last_name or ''} (@{user.username or 'без username'})\n🆔 ID: {user.id}"
     
-    # Пересылка сообщения администратору
-    if file_id:
-        if file_type == 'photo':
-            await context.bot.send_photo(
-                chat_id=ADMIN_USER_ID,
-                photo=file_id,
-                caption=f"{user_info}\n\nПрислал фото" + (f" с текстом: {message.caption}" if message.caption else "")
-            )
-        elif file_type == 'document':
-            await context.bot.send_document(
-                chat_id=ADMIN_USER_ID,
-                document=file_id,
-                caption=f"{user_info}\n\nПрислал документ" + (f" с текстом: {message.caption}" if message.caption else "")
-            )
-        elif file_type == 'video':
-            await context.bot.send_video(
-                chat_id=ADMIN_USER_ID,
-                video=file_id,
-                caption=f"{user_info}\n\nПрислал видео" + (f" с текстом: {message.caption}" if message.caption else "")
-            )
-        elif file_type == 'voice':
-            await context.bot.send_voice(
-                chat_id=ADMIN_USER_ID,
-                voice=file_id,
-                caption=f"{user_info}\n\nПрислал голосовое сообщение"
-            )
-    else:
-        keyboard = [
-            [
-                InlineKeyboardButton("Заблокировать", callback_data=f"block_{user.id}"),
-                InlineKeyboardButton("Ответить", callback_data=f"reply_{user.id}")
+    try:
+        # Пересылка сообщения администратору с явным указанием chat_id
+        if file_id:
+            if file_type == 'photo':
+                await context.bot.send_photo(
+                    chat_id=int(ADMIN_USER_ID),  # Явное преобразование в int для уверенности
+                    photo=file_id,
+                    caption=f"{user_info}\n\nПрислал фото" + (f" с текстом: {message.caption}" if message.caption else "")
+                )
+                logger.info(f"Фото от пользователя {user.id} переслано администратору")
+            
+            elif file_type == 'document':
+                await context.bot.send_document(
+                    chat_id=int(ADMIN_USER_ID),
+                    document=file_id,
+                    caption=f"{user_info}\n\nПрислал документ" + (f" с текстом: {message.caption}" if message.caption else "")
+                )
+                logger.info(f"Документ от пользователя {user.id} переслан администратору")
+            
+            elif file_type == 'video':
+                await context.bot.send_video(
+                    chat_id=int(ADMIN_USER_ID),
+                    video=file_id,
+                    caption=f"{user_info}\n\nПрислал видео" + (f" с текстом: {message.caption}" if message.caption else "")
+                )
+                logger.info(f"Видео от пользователя {user.id} переслано администратору")
+            
+            elif file_type == 'voice':
+                await context.bot.send_voice(
+                    chat_id=int(ADMIN_USER_ID),
+                    voice=file_id,
+                    caption=f"{user_info}\n\nПрислал голосовое сообщение"
+                )
+                logger.info(f"Голосовое сообщение от пользователя {user.id} переслано администратору")
+            
+            elif file_type == 'audio':
+                await context.bot.send_audio(
+                    chat_id=int(ADMIN_USER_ID),
+                    audio=file_id,
+                    caption=f"{user_info}\n\nПрислал аудио" + (f" с текстом: {message.caption}" if message.caption else "")
+                )
+                logger.info(f"Аудио от пользователя {user.id} переслано администратору")
+            
+            elif file_type == 'sticker':
+                # Сначала отправляем информацию о пользователе
+                await context.bot.send_message(
+                    chat_id=int(ADMIN_USER_ID),
+                    text=f"{user_info}\n\nПрислал стикер:"
+                )
+                # Затем отправляем сам стикер
+                await context.bot.send_sticker(
+                    chat_id=int(ADMIN_USER_ID),
+                    sticker=file_id
+                )
+                logger.info(f"Стикер от пользователя {user.id} переслан администратору")
+        else:
+            # Создаем инлайн-кнопки для взаимодействия
+            keyboard = [
+                [
+                    InlineKeyboardButton("Заблокировать", callback_data=f"block_{user.id}"),
+                    InlineKeyboardButton("Ответить", callback_data=f"reply_{user.id}")
+                ]
             ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await context.bot.send_message(
-            chat_id=ADMIN_USER_ID,
-            text=f"{user_info}\n\n📝 Сообщение: {message.text}",
-            reply_markup=reply_markup
-        )
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Отправляем текстовое сообщение
+            sent_message = await context.bot.send_message(
+                chat_id=int(ADMIN_USER_ID),
+                text=f"{user_info}\n\n📝 Сообщение: {message.text or '[Пустое сообщение]'}",
+                reply_markup=reply_markup
+            )
+            logger.info(f"Текстовое сообщение от пользователя {user.id} переслано администратору, message_id: {sent_message.message_id}")
+    
+    except Exception as e:
+        logger.error(f"Ошибка при пересылке сообщения администратору: {str(e)}")
+        # Пробуем отправить уведомление о проблеме
+        try:
+            await context.bot.send_message(
+                chat_id=int(ADMIN_USER_ID),
+                text=f"⚠️ Ошибка при пересылке сообщения от пользователя {user.id}:\n{str(e)}"
+            )
+        except Exception as inner_e:
+            logger.critical(f"Критическая ошибка при отправке уведомления о проблеме: {str(inner_e)}")
     
     # Отправка подтверждения пользователю
-    await update.message.reply_text("Спасибо! Ваше сообщение было передано.")
+    try:
+        await update.message.reply_text("Спасибо! Ваше сообщение было передано.")
+        logger.info(f"Подтверждение отправлено пользователю {user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке подтверждения пользователю {user.id}: {str(e)}")
 
 
 # Команда для админа - получить список сообщений
@@ -138,6 +209,7 @@ async def get_messages(update: Update, context: CallbackContext) -> None:
     # Проверка, является ли пользователь администратором
     if user.id != ADMIN_USER_ID:
         await update.message.reply_text("У вас нет доступа к этой команде.")
+        logger.warning(f"Пользователь {user.id} пытался получить доступ к административной команде /messages")
         return
     
     # Парсинг аргументов команды
@@ -152,6 +224,7 @@ async def get_messages(update: Update, context: CallbackContext) -> None:
     
     if not latest_messages:
         await update.message.reply_text("Сообщений пока нет.")
+        logger.info("Запрос на получение сообщений: сообщений нет")
         return
     
     # Формирование и отправка ответа
@@ -164,6 +237,7 @@ async def get_messages(update: Update, context: CallbackContext) -> None:
         response += f"📝 {text[:50]}{'...' if len(text) > 50 else ''}\n\n"
     
     await update.message.reply_text(response)
+    logger.info(f"Запрос на получение {limit} сообщений выполнен")
 
 
 # Команда для админа - заблокировать пользователя
@@ -173,6 +247,7 @@ async def block_user(update: Update, context: CallbackContext) -> None:
     # Проверка, является ли пользователь администратором
     if user.id != ADMIN_USER_ID:
         await update.message.reply_text("У вас нет доступа к этой команде.")
+        logger.warning(f"Пользователь {user.id} пытался получить доступ к административной команде /block")
         return
     
     # Парсинг аргументов команды
@@ -202,6 +277,7 @@ async def block_user(update: Update, context: CallbackContext) -> None:
     })
     
     await update.message.reply_text(f"Пользователь с ID {user_id} заблокирован.")
+    logger.info(f"Пользователь с ID {user_id} заблокирован администратором")
 
 
 # Команда для админа - разблокировать пользователя
@@ -211,6 +287,7 @@ async def unblock_user(update: Update, context: CallbackContext) -> None:
     # Проверка, является ли пользователь администратором
     if user.id != ADMIN_USER_ID:
         await update.message.reply_text("У вас нет доступа к этой команде.")
+        logger.warning(f"Пользователь {user.id} пытался получить доступ к административной команде /unblock")
         return
     
     # Парсинг аргументов команды
@@ -227,6 +304,7 @@ async def unblock_user(update: Update, context: CallbackContext) -> None:
     
     if result.deleted_count > 0:
         await update.message.reply_text(f"Пользователь с ID {user_id} разблокирован.")
+        logger.info(f"Пользователь с ID {user_id} разблокирован администратором")
     else:
         await update.message.reply_text(f"Пользователь с ID {user_id} не был заблокирован.")
 
@@ -238,6 +316,7 @@ async def get_blocked_users(update: Update, context: CallbackContext) -> None:
     # Проверка, является ли пользователь администратором
     if user.id != ADMIN_USER_ID:
         await update.message.reply_text("У вас нет доступа к этой команде.")
+        logger.warning(f"Пользователь {user.id} пытался получить доступ к административной команде /blocked")
         return
     
     # Получение списка заблокированных пользователей
@@ -274,6 +353,7 @@ async def get_blocked_users(update: Update, context: CallbackContext) -> None:
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(response, reply_markup=reply_markup)
+    logger.info("Запрос на получение списка заблокированных пользователей выполнен")
 
 
 # Обработка callback-запросов от инлайн-кнопок
@@ -301,6 +381,7 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
         })
         
         await query.edit_message_text(text=f"Пользователь с ID {user_id} заблокирован.")
+        logger.info(f"Пользователь с ID {user_id} заблокирован через кнопку в интерфейсе")
     
     # Обработка разблокировки пользователя
     elif data.startswith("unblock_"):
@@ -311,6 +392,7 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
         
         if result.deleted_count > 0:
             await query.edit_message_text(text=f"Пользователь с ID {user_id} разблокирован.")
+            logger.info(f"Пользователь с ID {user_id} разблокирован через кнопку в интерфейсе")
         else:
             await query.edit_message_text(text=f"Пользователь с ID {user_id} не был заблокирован.")
     
@@ -335,6 +417,7 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
             text=f"Теперь вы отвечаете пользователю {username} (ID: {user_id}).\n"
                  f"Отправьте ваш ответ или используйте /cancel для отмены."
         )
+        logger.info(f"Активирован режим ответа пользователю с ID {user_id}")
 
 
 # Отмена режима ответа
@@ -344,12 +427,14 @@ async def cancel(update: Update, context: CallbackContext) -> None:
     # Проверка, является ли пользователь администратором
     if user.id != ADMIN_USER_ID:
         await update.message.reply_text("У вас нет доступа к этой команде.")
+        logger.warning(f"Пользователь {user.id} пытался получить доступ к административной команде /cancel")
         return
     
     # Очистка контекста
     if "reply_to" in context.user_data:
         del context.user_data["reply_to"]
         await update.message.reply_text("Режим ответа отменен.")
+        logger.info("Режим ответа отменен")
     else:
         await update.message.reply_text("Нет активного режима ответа.")
 
@@ -395,6 +480,17 @@ async def admin_reply(update: Update, context: CallbackContext) -> None:
                 voice=message.voice.file_id,
                 caption="Ответ от администратора"
             )
+        elif message.audio:
+            await context.bot.send_audio(
+                chat_id=user_id,
+                audio=message.audio.file_id,
+                caption=message.caption or "Ответ от администратора"
+            )
+        elif message.sticker:
+            await context.bot.send_sticker(
+                chat_id=user_id,
+                sticker=message.sticker.file_id
+            )
         else:
             await context.bot.send_message(
                 chat_id=user_id,
@@ -406,8 +502,10 @@ async def admin_reply(update: Update, context: CallbackContext) -> None:
         
         # Подтверждение отправки
         await update.message.reply_text(f"Сообщение отправлено пользователю (ID: {user_id}).")
+        logger.info(f"Ответ отправлен пользователю с ID {user_id}")
     except Exception as e:
         await update.message.reply_text(f"Ошибка при отправке сообщения: {str(e)}")
+        logger.error(f"Ошибка при отправке ответа пользователю {user_id}: {str(e)}")
 
 
 def main() -> None:
@@ -437,7 +535,9 @@ def main() -> None:
         handle_message
     ))
     
-    # Запуск бота
+    # Запуск бота с выводом информации о начале работы
+    logger.info("Бот запущен и готов к работе")
+    print(f"Бот запущен. ADMIN_USER_ID установлен на {ADMIN_USER_ID}")
     application.run_polling()
 
 
